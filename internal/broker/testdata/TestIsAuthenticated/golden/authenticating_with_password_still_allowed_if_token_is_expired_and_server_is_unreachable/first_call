@@ -6,6 +6,6 @@ data: |-
     		"gecos": "saved-user",
     		"dir": "/home/test-user@email.com",
     		"shell": "/usr/bin/bash",
-    		"groups": [{"name": "saved-remote-group", "gid": "12345"}, {"name": "saved-local-group", "gid": ""}]
+    		"groups": [ {"name": "remote-group", "ugid": "12345"}, {"name": "linux-local-group", "ugid": ""} ]
     }}
 err: <nil>
