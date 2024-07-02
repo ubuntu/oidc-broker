@@ -401,7 +401,7 @@ func (b *Broker) IsAuthenticated(sessionID, authenticationData string) (string, 
 
 	encoded, err := json.Marshal(iaResponse)
 	if err != nil {
-		return AuthDenied, "", fmt.Errorf("could not marshal data: %v", err)
+		return AuthDenied, "", fmt.Errorf("could not parse data to JSON: %v", err)
 	}
 
 	data := string(encoded)

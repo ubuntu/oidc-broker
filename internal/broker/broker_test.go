@@ -164,7 +164,7 @@ func TestGetAuthenticationModes(t *testing.T) {
 				provider, stopServer = testutils.StartMockProvider(address, opts...)
 				t.Cleanup(stopServer)
 			}
-			b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, tc.sessionMode)
+			b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, tc.sessionMode, "")
 
 			if tc.sessionID == "-" {
 				sessionID = ""
@@ -256,7 +256,7 @@ func TestSelectAuthenticationMode(t *testing.T) {
 				sessionType = "passwd"
 			}
 
-			b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, sessionType)
+			b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, sessionType, "")
 			if tc.tokenExists {
 				err := os.MkdirAll(filepath.Dir(b.TokenPathForSession(sessionID)), 0700)
 				require.NoError(t, err, "Setup: MkdirAll should not have returned an error")
@@ -290,7 +290,9 @@ func TestIsAuthenticated(t *testing.T) {
 	correctPassword := "password"
 
 	tests := map[string]struct {
-		sessionMode    string
+		sessionMode string
+		username    string
+
 		firstMode      string
 		firstChallenge string
 		firstAuthInfo  map[string]any
@@ -365,6 +367,7 @@ func TestIsAuthenticated(t *testing.T) {
 				"token": (&oauth2.Token{}).WithExtra(map[string]interface{}{"id_token": "invalid"}),
 			},
 		},
+		"Error when selected username does not match the provider one": {username: "not-matching", firstChallenge: "-", wantSecondCall: true},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -390,7 +393,7 @@ func TestIsAuthenticated(t *testing.T) {
 				defer cleanup()
 				provider = p
 			}
-			b, sessionID, key := newBrokerForTests(t, cacheDir, provider.URL, tc.sessionMode)
+			b, sessionID, key := newBrokerForTests(t, cacheDir, provider.URL, tc.sessionMode, tc.username)
 
 			if tc.preexistentToken != "" {
 				tok := generateCachedInfo(t, tc.preexistentToken, provider.URL)
@@ -623,7 +626,7 @@ func TestCancelIsAuthenticated(t *testing.T) {
 	provider, cleanup := testutils.StartMockProvider("", testutils.WithHandler("/token", testutils.HangingHandler(ctx)))
 	t.Cleanup(cleanup)
 
-	b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, "auth")
+	b, sessionID, _ := newBrokerForTests(t, t.TempDir(), provider.URL, "auth", "")
 	updateAuthModes(t, b, sessionID, "device_auth")
 
 	stopped := make(chan struct{})
@@ -644,7 +647,7 @@ func TestCancelIsAuthenticated(t *testing.T) {
 func TestEndSession(t *testing.T) {
 	t.Parallel()
 
-	b, sessionID, _ := newBrokerForTests(t, t.TempDir(), defaultProvider.URL, "auth")
+	b, sessionID, _ := newBrokerForTests(t, t.TempDir(), defaultProvider.URL, "auth", "")
 
 	// Try to end a session that does not exist
 	err := b.EndSession("nonexistent")
