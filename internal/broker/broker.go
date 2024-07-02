@@ -369,9 +369,9 @@ func (b *Broker) IsAuthenticated(sessionID, authenticationData string) (string, 
 
 	authDone := make(chan struct{})
 	var access string
-	var data json.Marshaler
+	var iaResponse isAuthenticatedDataResponse
 	go func() {
-		access, data = b.handleIsAuthenticated(ctx, &session, authData)
+		access, iaResponse = b.handleIsAuthenticated(ctx, &session, authData)
 		close(authDone)
 	}()
 
@@ -388,7 +388,7 @@ func (b *Broker) IsAuthenticated(sessionID, authenticationData string) (string, 
 		session.attemptsPerMode[session.selectedMode]++
 		if session.attemptsPerMode[session.selectedMode] == maxAuthAttempts {
 			access = AuthDenied
-			data = errorMessage{Message: "maximum number of attempts reached"}
+			iaResponse = errorMessage{Message: "maximum number of attempts reached"}
 		}
 
 	case AuthNext:
@@ -399,16 +399,19 @@ func (b *Broker) IsAuthenticated(sessionID, authenticationData string) (string, 
 		return AuthDenied, "", err
 	}
 
-	// The data type is unknown, so we need to directly call its marshal function rather than relying
-	// on json.Marshal, which would reflect the struct fields and use what is implemented for the basic types.
-	encoded, err := data.MarshalJSON()
+	encoded, err := json.Marshal(iaResponse)
 	if err != nil {
 		return AuthDenied, "", fmt.Errorf("could not marshal data: %v", err)
 	}
-	return access, string(encoded), nil
+
+	data := string(encoded)
+	if data == "null" {
+		data = ""
+	}
+	return access, data, nil
 }
 
-func (b *Broker) handleIsAuthenticated(ctx context.Context, session *sessionInfo, authData map[string]string) (access string, data json.Marshaler) {
+func (b *Broker) handleIsAuthenticated(ctx context.Context, session *sessionInfo, authData map[string]string) (access string, data isAuthenticatedDataResponse) {
 	// Decrypt challenge if present.
 	challenge, err := decodeRawChallenge(b.privateKey, authData["challenge"])
 	if err != nil {
@@ -435,7 +438,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, session *sessionInfo
 		}
 
 		session.authInfo["auth_info"] = authCachedInfo{Token: t, RawIDToken: rawIDToken}
-		return AuthNext, errorMessage{}
+		return AuthNext, nil
 
 	case "password":
 		authInfo, offline, err = b.loadAuthInfo(session, challenge)
@@ -445,7 +448,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, session *sessionInfo
 
 		if session.mode == "passwd" {
 			session.authInfo["auth_info"] = authInfo
-			return AuthNext, errorMessage{}
+			return AuthNext, nil
 		}
 
 	case "newpassword":
@@ -469,14 +472,14 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, session *sessionInfo
 	}
 
 	if offline {
-		return AuthGranted, authInfo.UserInfo
+		return AuthGranted, userInfoMessage{UserInfo: authInfo.UserInfo}
 	}
 
 	if err := b.cacheAuthInfo(session, authInfo, challenge); err != nil {
 		return AuthRetry, errorMessage{Message: fmt.Sprintf("could not update cached info: %v", err)}
 	}
 
-	return AuthGranted, authInfo.UserInfo
+	return AuthGranted, userInfoMessage{UserInfo: authInfo.UserInfo}
 }
 
 func (b *Broker) startAuthenticate(sessionID string) (context.Context, error) {
@@ -677,6 +680,16 @@ func (b *Broker) userClaims(ctx context.Context, rawIDToken, username string) (u
 	}
 
 	return userClaims, nil
+}
+
+// userInfo represents the user information obtained from the provider.
+type userInfo struct {
+	Name   string       `json:"name"`
+	UUID   string       `json:"uuid"`
+	Home   string       `json:"dir"`
+	Shell  string       `json:"shell"`
+	Gecos  string       `json:"gecos"`
+	Groups []group.Info `json:"groups"`
 }
 
 func (b *Broker) userInfoFromClaims(userClaims claims, groups []group.Info) userInfo {
